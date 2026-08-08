@@ -14,18 +14,19 @@ The repository contains the intended end-to-end stack:
 - Integration with `asifmahmoud414/mock-gateway:latest`; no replacement gateway is included
 - Docker Compose services for the API, frontend, PostgreSQL, and the provided gateway
 - Automated unit/integration/concurrency tests and k6 scenarios
-- GitHub Actions CI and deployment workflow scaffolding
+- GitHub Actions CI/CD workflows and AWS provisioning/recovery scripts
 
-Verification items that depend on running infrastructure are deliberately not presented as completed evidence:
+Verification status:
 
 - **Fresh-clone dependency/build verification:** PASSED locally (`npm ci`, typecheck, tests, production builds)
 - **Compose runtime verification:** PASSED locally; API, frontend, PostgreSQL, and the provided gateway started from the checked-in Compose file
-- **Public deployment:** PENDING — no deployed URL has been supplied
-- **Scenario A deployed result:** PENDING
-- **Scenario B deployed result:** PENDING
+- **Public deployment:** PASSED on an AWS EC2 `t2.micro` behind an Application Load Balancer
+- **Public health:** PASSED with HTTP `200` in 406.8 ms during final verification
+- **Scenario A deployed result:** PASSED — 1 success, 99 rejections, 0 oversell
+- **Scenario B deployed result:** PASSED — expiry observed and the seat was rebooked by a different user
 - **Local Scenario A/B and gateway force-mode verification:** PASSED on 2026-08-08
 
-The hackathon scope intentionally excludes an admin portal, seat selection across multiple seats in one hold, production user authentication, and multi-region deployment. Deployment-specific secrets and a target VM must be supplied by the operator.
+The hackathon scope intentionally excludes an admin portal, seat selection across multiple seats in one hold, production user authentication, HTTPS/domain management, and multi-region deployment.
 
 ## Architecture
 
@@ -58,11 +59,11 @@ Payment is asynchronous. The API starts a charge with a stable idempotency key a
 
 ## Run locally from a clean clone
 
-Prerequisites: Git, Docker Engine/Desktop, and Docker Compose v2. Ports `3000`, `5173`, `5432`, and `9000` must be free.
+Prerequisites: Git, Docker Engine/Desktop, and Docker Compose v2. Ports `3000`, `8080`, `5432`, and `9000` must be free.
 
 ```bash
-git clone <PUBLIC_REPOSITORY_URL>
-cd CinemaSeat
+git clone https://github.com/towhid146/cinemaseat.git
+cd cinemaseat
 docker compose up --build
 ```
 
@@ -259,7 +260,9 @@ Acceptance criteria:
 - Oversold seats: 0
 - Final seat map: the selected seat appears exactly once as `HELD`
 
-**Observed local k6 result (2026-08-08):** 100 requests, 1 successful hold, 99 clean `409` rejections, 0 unexpected responses, 0 oversell, and exactly 1 held-seat match in the final seat map. All thresholds passed. The deployed rerun remains pending until the public URL exists.
+**Observed local k6 result (2026-08-08):** 100 requests, 1 successful hold, 99 clean `409` rejections, 0 unexpected responses, 0 oversell, and exactly 1 held-seat match in the final seat map. All thresholds passed.
+
+**Observed deployed k6 result (2026-08-08):** against showtime `1`, seat `A1`, exactly 1 of 100 simultaneous buyers received `201`; the other 99 received clean `409` responses. There were 0 unexpected responses, 0 oversold seats, and the final seat map contained exactly 1 held-seat match. All thresholds passed.
 
 ### Scenario B — abandoned hold
 
@@ -270,13 +273,19 @@ Acceptance sequence:
 3. After `expiresAt`, the seat map reports the seat as `AVAILABLE`.
 4. User B successfully receives a new hold for that same showtime seat.
 
-**Observed local k6 result (2026-08-08):** with `HOLD_TTL_SECONDS=5`, user A held showtime `1` seat `A2`; the seat was `AVAILABLE` after 7,029 ms; user B then received `201`. Expiry and rebooking thresholds passed. The deployed rerun remains pending until the public URL exists.
+**Observed local k6 result (2026-08-08):** with `HOLD_TTL_SECONDS=5`, user A held showtime `1` seat `A2`; the seat was `AVAILABLE` after 7,029 ms; user B then received `201`. Expiry and rebooking thresholds passed.
+
+**Observed deployed k6 result (2026-08-08):** with `HOLD_TTL_SECONDS=10`, user A held showtime `1` seat `A2`; expiry was observed after 12,352 ms and a different user immediately received `201` for the same seat. Both thresholds passed.
 
 ## Deployment
 
-**Deployed URL: PENDING — target VM credentials and hostname are not available in this repository.**
+**Deployed URL: <http://cinemaseat-08081451-1786809187.ap-southeast-1.elb.amazonaws.com>**
 
-CI runs on pull requests and default-branch pushes. CD is scoped to default-branch pushes and requires the repository/VM deployment secrets described by the workflow. A deployment is not claimed until the public URL, health check, and externally generated Scenario A/B evidence are recorded above.
+The production stack runs on an AWS EC2 `t2.micro` in `ap-southeast-1` behind an internet-facing Application Load Balancer. Only load-balancer HTTP traffic reaches the instance; PostgreSQL and the gateway are not publicly exposed. The deployment uses `HOLD_TTL_SECONDS=10` so abandoned-hold behavior can be demonstrated quickly.
+
+Provisioning is reproducible with `scripts/deploy-aws.ps1`. `scripts/verify-deployed.ps1` runs k6 from the operator's machine and writes the deployed Scenario A/B JSON evidence under the ignored `outputs/` directory.
+
+CI runs on pull requests and default-branch pushes. CD is scoped to default-branch pushes and activates when the production SSH variables/secrets documented in `.github/workflows/cd.yml` are configured. The initial AWS infrastructure deployment was performed with the checked-in provisioning script; credentials are prompted securely and never written to the repository.
 
 ## Attribution
 

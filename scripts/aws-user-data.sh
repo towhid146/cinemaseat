@@ -3,7 +3,10 @@ set -euxo pipefail
 
 exec > >(tee /var/log/cinemaseat-bootstrap.log) 2>&1
 
-dnf install -y docker git curl
+# Amazon Linux 2023 already ships curl-minimal, which provides the curl binary.
+# Installing the full curl package conflicts with that base package and aborts
+# the entire transaction, so only request packages that are actually missing.
+dnf install -y docker git
 systemctl enable --now docker
 
 if [ ! -f /swapfile ]; then
@@ -20,7 +23,17 @@ curl --fail --location --retry 5 \
   --output /usr/local/lib/docker/cli-plugins/docker-compose
 chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 
-git clone --depth 1 https://github.com/towhid146/cinemaseat.git /opt/cinemaseat
+curl --fail --location --retry 5 \
+  https://github.com/docker/buildx/releases/download/v0.34.1/buildx-v0.34.1.linux-amd64 \
+  --output /usr/local/lib/docker/cli-plugins/docker-buildx
+chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx
+docker buildx version
+
+if [ -d /opt/cinemaseat/.git ]; then
+  git -C /opt/cinemaseat pull --ff-only origin main
+else
+  git clone --depth 1 https://github.com/towhid146/cinemaseat.git /opt/cinemaseat
+fi
 cat > /opt/cinemaseat/.env <<'ENVIRONMENT'
 FRONTEND_PORT=80
 HOLD_TTL_SECONDS=10

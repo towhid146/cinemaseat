@@ -24,16 +24,28 @@ function ConvertFrom-SecureValue([Security.SecureString]$SecureValue) {
 
 function Invoke-Aws([string[]]$AwsArguments) {
   $volume = ($PSScriptRoot -replace '\\', '/') + ':/workspace/scripts:ro'
-  $result = & docker run --rm `
-    --env-file $credentialsFile.FullName `
-    --volume $volume `
-    amazon/aws-cli:latest @AwsArguments
-
-  if ($LASTEXITCODE -ne 0) {
-    throw "AWS CLI failed: aws $($AwsArguments -join ' ')"
+  $previousErrorActionPreference = $ErrorActionPreference
+  try {
+    # AWS writes service errors to stderr. Windows PowerShell turns native stderr
+    # into ErrorRecords, so temporarily avoid terminating before we inspect the
+    # process exit code and preserve the actual AWS response.
+    $ErrorActionPreference = 'Continue'
+    $result = & docker run --rm `
+      --env-file $credentialsFile.FullName `
+      --volume $volume `
+      amazon/aws-cli:latest @AwsArguments 2>&1
+    $exitCode = $LASTEXITCODE
+  }
+  finally {
+    $ErrorActionPreference = $previousErrorActionPreference
   }
 
-  return (($result | Out-String).Trim())
+  $message = (($result | Out-String).Trim())
+  if ($exitCode -ne 0) {
+    throw "AWS CLI failed: aws $($AwsArguments -join ' ')`nAWS response: $message"
+  }
+
+  return $message
 }
 
 function Test-RunInstancesPermission(
@@ -53,19 +65,28 @@ function Test-RunInstancesPermission(
     '--user-data', 'file:///workspace/scripts/aws-user-data.sh',
     '--tag-specifications', "ResourceType=instance,Tags=[{Key=Name,Value=$Name}]"
   )
-  $result = & docker run --rm `
-    --env-file $credentialsFile.FullName `
-    --volume $volume `
-    amazon/aws-cli:latest @arguments 2>&1
-  $exitCode = $LASTEXITCODE
+  $previousErrorActionPreference = $ErrorActionPreference
+  try {
+    # A successful AWS --dry-run intentionally exits non-zero and writes
+    # DryRunOperation to stderr. Capture it instead of letting PowerShell stop.
+    $ErrorActionPreference = 'Continue'
+    $result = & docker run --rm `
+      --env-file $credentialsFile.FullName `
+      --volume $volume `
+      amazon/aws-cli:latest @arguments 2>&1
+    $exitCode = $LASTEXITCODE
+  }
+  finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+  }
   $message = (($result | Out-String).Trim())
 
   if ($message -match 'DryRunOperation') {
     return
   }
 
-  if ($message -match 'UnauthorizedOperation|explicit deny') {
-    throw "EC2 launch preflight was denied for instance type '$InstanceType'. This lab account restricts ec2:RunInstances; use an instance type allowed by its IAM policy (the console default is t2.micro). AWS response: $message"
+  if ($message -match 'UnauthorizedOperation|AccessDenied|explicit deny') {
+    throw "EC2 launch preflight was denied for instance type '$InstanceType'. The IAM administrator or Poridhi lab policy must permit ec2:RunInstances; application code cannot override that policy. AWS response: $message"
   }
 
   throw "EC2 launch preflight failed (exit code $exitCode): $message"
