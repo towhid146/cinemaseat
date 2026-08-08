@@ -12,6 +12,6 @@ describe('configuration', () => {
 
   it('uses a container-reachable callback URL by default', () => {
     expect(loadConfig({}).GATEWAY_CALLBACK_URL).toBe('http://api:3000/webhooks/payment');
+    expect(loadConfig({}).GATEWAY_OTP_CALLBACK_URL).toBe('http://api:3000/webhooks/otp');
   });
 });
-

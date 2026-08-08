@@ -35,6 +35,7 @@ services:
       HOLD_SWEEP_INTERVAL_MS: ${HOLD_SWEEP_INTERVAL_MS:-1000}
       GATEWAY_URL: http://gateway:9000
       GATEWAY_CALLBACK_URL: http://api:3000/webhooks/payment
+      GATEWAY_OTP_CALLBACK_URL: http://api:3000/webhooks/otp
       GATEWAY_SECRET: ${GATEWAY_SECRET:-z2p-2026-secret}
       GATEWAY_TIMEOUT_MS: ${GATEWAY_TIMEOUT_MS:-5000}
       LOG_LEVEL: ${LOG_LEVEL:-info}

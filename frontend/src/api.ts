@@ -206,9 +206,10 @@ export const api = {
     return normalizeHold(payload);
   },
 
-  async sendOtp(bookingRef: string, phone: string): Promise<void> {
+  async sendOtp(bookingRef: string, phone: string, deterministic = false): Promise<void> {
     await request(`/bookings/${encodeURIComponent(bookingRef)}/otp/send`, {
       method: "POST",
+      headers: deterministic ? { "X-Mock-Mode": "deterministic" } : undefined,
       body: JSON.stringify({ phone }),
     });
   },
@@ -220,10 +221,14 @@ export const api = {
     });
   },
 
-  async pay(bookingRef: string): Promise<Booking> {
+  async pay(bookingRef: string, deterministic = false): Promise<Booking> {
     const payload = await request<unknown>(
       `/bookings/${encodeURIComponent(bookingRef)}/pay`,
-      { method: "POST", body: JSON.stringify({}) },
+      {
+        method: "POST",
+        headers: deterministic ? { "X-Mock-Mode": "deterministic" } : undefined,
+        body: JSON.stringify({}),
+      },
     );
     return normalizeBooking(payload);
   },

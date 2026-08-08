@@ -63,12 +63,14 @@ export async function refund(paymentId: string): Promise<void> {
   }
 }
 
-export async function sendOtp(phone: string, ref: string): Promise<void> {
+export async function sendOtp(phone: string, ref: string, mock: Pick<MockHeaders, 'mode'> = {}): Promise<void> {
   const config = loadConfig();
+  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  if (mock.mode) headers['x-mock-mode'] = mock.mode;
   const response = await gatewayFetch('/otp/send', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ phone, ref, callback_url: config.GATEWAY_CALLBACK_URL })
+    headers,
+    body: JSON.stringify({ phone, ref, callback_url: config.GATEWAY_OTP_CALLBACK_URL })
   });
   if (response.status !== 202) {
     throw new GatewayError(`Gateway OTP send returned ${response.status}`, response.status);
@@ -86,4 +88,3 @@ export async function verifyOtp(ref: string, code: string): Promise<{ verified: 
   if (response.status !== 200) throw new GatewayError(`Gateway OTP verify returned ${response.status}`, response.status);
   return (await response.json()) as { verified: boolean };
 }
-

@@ -3,7 +3,8 @@ import type { Request, Response } from 'express';
 import { loadConfig } from '../config.js';
 import { logger } from '../logger.js';
 import { processPaymentEvent } from '../services/webhooks.js';
-import type { GatewayPaymentEvent } from '../types.js';
+import { recordOtpDelivery } from '../services/bookings.js';
+import type { GatewayOtpEvent, GatewayPaymentEvent } from '../types.js';
 
 export function signatureMatches(body: Buffer, signature: string | undefined): boolean {
   if (!signature) return false;
@@ -31,6 +32,34 @@ export async function paymentWebhook(req: Request, res: Response): Promise<void>
     res.status(200).json({ accepted: true, ...result });
   } catch (error) {
     logger.error({ error }, 'Payment webhook could not be processed');
+    res.status(200).json({ accepted: false, reason: 'processing_error' });
+  }
+}
+
+export async function otpWebhook(req: Request, res: Response): Promise<void> {
+  const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from('');
+  const signature = req.header('x-signature');
+  if (signature && !signatureMatches(rawBody, signature)) {
+    res.status(200).json({ accepted: false, reason: 'invalid_signature' });
+    return;
+  }
+
+  try {
+    const event = JSON.parse(rawBody.toString('utf8')) as GatewayOtpEvent;
+    const ref = typeof event.ref === 'string'
+      ? event.ref
+      : typeof event.booking_ref === 'string'
+        ? event.booking_ref
+        : undefined;
+    if (!ref) {
+      res.status(200).json({ accepted: false, reason: 'invalid_payload' });
+      return;
+    }
+    const matched = await recordOtpDelivery(ref);
+    // Never echo or log the OTP code. Verification remains gateway-owned.
+    res.status(200).json({ accepted: true, matched });
+  } catch (error) {
+    logger.error({ error }, 'OTP webhook could not be processed');
     res.status(200).json({ accepted: false, reason: 'processing_error' });
   }
 }

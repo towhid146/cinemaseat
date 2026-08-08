@@ -264,7 +264,7 @@ export async function initiatePayment(ref: string, mock: MockHeaders) {
   }
 }
 
-export async function sendBookingOtp(ref: string, phone: string) {
+export async function sendBookingOtp(ref: string, phone: string, mock: Pick<MockHeaders, 'mode'> = {}) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -296,11 +296,27 @@ export async function sendBookingOtp(ref: string, phone: string) {
   }
 
   try {
-    await gateway.sendOtp(phone, ref);
+    await gateway.sendOtp(phone, ref, mock);
     return { bookingRef: ref, status: 'OTP_PENDING', gatewayAccepted: true };
   } catch {
     return { bookingRef: ref, status: 'OTP_PENDING', gatewayAccepted: false };
   }
+}
+
+export async function recordOtpDelivery(ref: string): Promise<boolean> {
+  const delivered = await pool.query(
+    `UPDATE otp_verifications
+        SET updated_at = now()
+      WHERE id = (
+        SELECT id FROM otp_verifications
+         WHERE ref = $1
+         ORDER BY created_at DESC
+         LIMIT 1
+      )
+      RETURNING id`,
+    [ref]
+  );
+  return delivered.rowCount === 1;
 }
 
 export async function verifyBookingOtp(ref: string, code: string) {

@@ -157,7 +157,8 @@ try {
 
   $deployment.status = 'HEALTHY'
   $deployment.error = $null
-  $deployment.recoveredAt = (Get-Date).ToUniversalTime().ToString('o')
+  $deployment | Add-Member -NotePropertyName recoveredAt `
+    -NotePropertyValue ((Get-Date).ToUniversalTime().ToString('o')) -Force
   Save-DeploymentState
   Write-Host "CinemaSeat is healthy: $($deployment.frontendUrl)" -ForegroundColor Green
 }

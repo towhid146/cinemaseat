@@ -12,5 +12,14 @@ describe('payment webhook HTTP contract', () => {
     expect(response.status).toBe(200);
     expect(response.body.accepted).toBe(false);
   });
-});
 
+  it('returns 2xx for an OTP callback it cannot recognize', async () => {
+    const response = await request(createApp())
+      .post('/webhooks/otp')
+      .set('content-type', 'application/json')
+      .send(JSON.stringify({ unexpected: true }));
+
+    expect(response.status).toBe(200);
+    expect(response.body.accepted).toBe(false);
+  });
+});

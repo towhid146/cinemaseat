@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { pool } from './db/pool.js';
 import { AppError } from './errors.js';
 import { logger } from './logger.js';
-import { paymentWebhook } from './routes/webhook.js';
+import { otpWebhook, paymentWebhook } from './routes/webhook.js';
 import * as bookings from './services/bookings.js';
 import * as catalog from './services/catalog.js';
 
@@ -40,6 +40,7 @@ export function createApp() {
 
   // This route must see the byte-exact body before the global JSON parser.
   app.post('/webhooks/payment', express.raw({ type: 'application/json', limit: '100kb' }), paymentWebhook);
+  app.post('/webhooks/otp', express.raw({ type: 'application/json', limit: '100kb' }), otpWebhook);
   app.use(express.json({ limit: '100kb' }));
 
   app.get('/health', (_req, res) => {
@@ -74,7 +75,9 @@ export function createApp() {
   });
   app.post('/api/bookings/:bookingRef/otp/send', async (req, res) => {
     const body = phoneBody.parse(req.body);
-    const otp = await bookings.sendBookingOtp(req.params.bookingRef, body.phone);
+    const otp = await bookings.sendBookingOtp(req.params.bookingRef, body.phone, {
+      mode: req.header('x-mock-mode') ?? undefined
+    });
     res.status(202).json(otp);
   });
   app.post('/api/bookings/:bookingRef/otp/verify', async (req, res) => {

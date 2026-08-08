@@ -8,6 +8,7 @@ const schema = z.object({
   HOLD_SWEEP_INTERVAL_MS: z.coerce.number().int().positive().default(1000),
   GATEWAY_URL: z.string().url().default('http://localhost:9000'),
   GATEWAY_CALLBACK_URL: z.string().url().default('http://api:3000/webhooks/payment'),
+  GATEWAY_OTP_CALLBACK_URL: z.string().url().default('http://api:3000/webhooks/otp'),
   GATEWAY_SECRET: z.string().min(1).default('z2p-2026-secret'),
   GATEWAY_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
   LOG_LEVEL: z.string().default('info')
@@ -18,4 +19,3 @@ export type Config = z.infer<typeof schema>;
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   return schema.parse(env);
 }
-

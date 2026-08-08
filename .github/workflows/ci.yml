@@ -38,6 +38,7 @@ jobs:
       HOLD_TTL_SECONDS: 5
       GATEWAY_URL: http://127.0.0.1:9000
       GATEWAY_CALLBACK_URL: http://127.0.0.1:3000/webhooks/payment
+      GATEWAY_OTP_CALLBACK_URL: http://127.0.0.1:3000/webhooks/otp
       GATEWAY_SECRET: z2p-2026-secret
     steps:
       - name: Check out source

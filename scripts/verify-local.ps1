@@ -97,4 +97,15 @@ try {
   docker compose up -d frontend
 }
 
+Write-Host 'Running all real-gateway payment force modes...'
+node scripts/verify-gateway-modes.mjs
+if ($LASTEXITCODE -ne 0) { throw 'Gateway force-mode verification failed.' }
+
+Write-Host 'Running deterministic OTP plus asynchronous payment flow...'
+node scripts/verify-otp-flow.mjs
+if ($LASTEXITCODE -ne 0) { throw 'OTP flow verification failed.' }
+
+Write-Host 'Checking fault isolation with the gateway stopped...'
+& "$PSScriptRoot\verify-fault-isolation.ps1"
+
 Write-Host "Verification complete. Reports: $outputDir\scenario-a-summary.json and scenario-b-summary.json"

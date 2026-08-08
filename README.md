@@ -92,6 +92,7 @@ Compose provides working local defaults. Important overrides include:
 | `HOLD_TTL_SECONDS` | Seconds before an incomplete hold can be acquired again | Compose value |
 | `GATEWAY_URL` | Server-to-server gateway address | `http://gateway:9000` |
 | `GATEWAY_CALLBACK_URL` | Callback reachable from the gateway container | `http://api:3000/webhooks/payment` |
+| `GATEWAY_OTP_CALLBACK_URL` | OTP delivery callback reachable from the gateway container | `http://api:3000/webhooks/otp` |
 | `GATEWAY_SECRET` | HMAC-SHA256 callback secret | `z2p-2026-secret` for local gateway only |
 | `VITE_API_URL` | Browser-visible API base URL | `/api` through the frontend proxy |
 | `FRONTEND_PORT` | Published frontend port | `8080` |
@@ -204,6 +205,8 @@ GET  /api/bookings/:bookingRef
 
 The pay route returns `202 PAYMENT_PENDING` after starting the charge; it never waits for the asynchronous callback. Clients poll the booking route for state. Gateway test-control headers `X-Mock-Mode` and `X-Mock-Force` may be sent to the pay route and are forwarded to `/charge` for integration testing.
 
+For a reliable live demonstration, append `?demo=1` to the frontend URL. This does not bypass the provider: the UI sends `X-Mock-Mode: deterministic` to the real gateway, displays its documented OTP `123456`, and still waits for the asynchronous payment callback before showing success. Without `?demo=1`, the documented delays, failures, duplicates, and missing OTP behavior remain active.
+
 ## Gateway correctness
 
 - `/charge` uses one stable `Idempotency-Key` per booking, including retries.
@@ -213,6 +216,7 @@ The pay route returns `202 PAYMENT_PENDING` after starting the charge; it never 
 - Matching by `booking_ref` handles a callback that races ahead of the local `payment_id` write.
 - Duplicate, early, and unrecognized events return 2xx so the gateway does not create a retry storm.
 - Payment success/failure and OTP verified/unverified remain independent persisted states.
+- OTP delivery uses the separate `http://api:3000/webhooks/otp` callback; the handler acknowledges unknown deliveries with 2xx and never exposes or logs the code.
 
 The required gateway modes are `success`, `fail`, `duplicate`, `timeout`, and `race`. A reproducible integration run against the real gateway container, rather than a locally built mock, is the acceptance criterion.
 
@@ -237,13 +241,17 @@ npm test
 npm run build
 ```
 
-The local unit suite contains 6 passing tests. PostgreSQL-backed tests add the exact 100-request contention, expiry/rebooking, callback-race, and duplicate-event assertions whenever `DATABASE_URL` is set; CI provisions that database automatically. Run every forced behavior against the real Compose gateway with:
+The local unit suite contains 8 passing tests. PostgreSQL-backed tests add 3 passing assertions for exact 100-request contention, expiry/rebooking, callback-race, and duplicate-event handling whenever `DATABASE_URL` is set; CI provisions that database automatically. Run every forced behavior against the real Compose gateway with:
 
 ```bash
 node scripts/verify-gateway-modes.mjs
+npm run verify:otp
+./scripts/verify-fault-isolation.ps1
 ```
 
 That script sends `success`, `fail`, `duplicate`, `timeout`, and `race` through the public `/pay` route and records response latency plus eventual payment state. The k6 scripts under `load-tests/` target an externally supplied base URL and should run outside the application host:
+
+The full checklist extracted from the official problem statement and gateway reference is in [`TESTING.md`](TESTING.md).
 
 ```bash
 k6 run -e BASE_URL=http://localhost:3000 -e SHOWTIME_ID=1 -e SEAT_LABEL=A1 load-tests/scenario-a-contention.js

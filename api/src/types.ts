@@ -16,3 +16,11 @@ export type GatewayPaymentEvent = {
   timestamp: string;
 };
 
+export type GatewayOtpEvent = {
+  ref?: string;
+  booking_ref?: string;
+  code?: string;
+  phone?: string;
+  timestamp?: string;
+  [key: string]: unknown;
+};

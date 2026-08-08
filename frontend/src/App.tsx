@@ -10,6 +10,8 @@ const TERMINAL_BOOKING_STATUSES = new Set([
   "CANCELLED",
 ]);
 
+const DEMO_MODE = new URLSearchParams(window.location.search).get("demo") === "1";
+
 function makeUserId(): string {
   try {
     const saved = localStorage.getItem("cinemaseat-user-id");
@@ -183,8 +185,9 @@ function App() {
     setBusy("send-otp");
     setError("");
     try {
-      await api.sendOtp(bookingRef, phone.trim());
+      await api.sendOtp(bookingRef, phone.trim(), DEMO_MODE);
       setOtpSent(true);
+      if (DEMO_MODE) setOtp("123456");
     } catch (caught) {
       setError(messageFrom(caught));
     } finally {
@@ -211,7 +214,7 @@ function App() {
     setBusy("pay");
     setError("");
     try {
-      setBooking(await api.pay(bookingRef));
+      setBooking(await api.pay(bookingRef, DEMO_MODE));
     } catch (caught) {
       setError(messageFrom(caught));
     } finally {
@@ -421,6 +424,7 @@ function App() {
                 <div className="flow-number">1</div>
                 <div className="flow-content">
                   <h3>Verify your phone</h3>
+                  {DEMO_MODE && <p className="success-line">Demo gateway OTP: 123456</p>}
                   {!otpSent ? (
                     <div className="input-action">
                       <input aria-label="Phone number" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="+8801…" />
@@ -442,7 +446,7 @@ function App() {
                 <div className="flow-number">2</div>
                 <div className="flow-content">
                   <h3>Start payment</h3>
-                  <p>The payment gateway will confirm asynchronously. This page updates automatically.</p>
+                  <p>{DEMO_MODE ? "The real gateway is in deterministic demo mode and confirms asynchronously." : "The payment gateway will confirm asynchronously. This page updates automatically."}</p>
                   <button className="primary" onClick={pay} disabled={!otpVerified || busy === "pay"}>
                     {busy === "pay" ? "Starting…" : booking?.status === "PAYMENT_PENDING" ? "Retry payment safely" : "Pay securely"}
                   </button>
