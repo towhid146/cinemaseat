@@ -281,7 +281,7 @@ Acceptance sequence:
 
 **Deployed URL: <http://cinemaseat-08081451-1786809187.ap-southeast-1.elb.amazonaws.com>**
 
-The production stack runs on an AWS EC2 `t2.micro` in `ap-southeast-1` behind an internet-facing Application Load Balancer. Only load-balancer HTTP traffic reaches the instance; PostgreSQL and the gateway are not publicly exposed. The deployment uses `HOLD_TTL_SECONDS=10` so abandoned-hold behavior can be demonstrated quickly.
+The production stack runs on an AWS EC2 `t2.micro` in `ap-southeast-1` behind an internet-facing Application Load Balancer. Only load-balancer HTTP traffic reaches the instance; PostgreSQL and the gateway are not publicly exposed. Scenario B was measured with `HOLD_TTL_SECONDS=10`; the interactive deployment was then restored to the normal 120-second hold window.
 
 Provisioning is reproducible with `scripts/deploy-aws.ps1`. `scripts/verify-deployed.ps1` runs k6 from the operator's machine and writes the deployed Scenario A/B JSON evidence under the ignored `outputs/` directory.
 

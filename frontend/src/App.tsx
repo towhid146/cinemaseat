@@ -232,6 +232,7 @@ function App() {
   }
 
   const confirmed = booking?.status === "CONFIRMED";
+  const expired = booking?.status === "EXPIRED";
 
   return (
     <>
@@ -402,10 +403,21 @@ function App() {
             <div>
               <Back onClick={reset} label="Start over" />
               <p className="eyebrow">Step 4</p>
-              <h2>Verify and pay</h2>
+              <h2>{expired ? "Your hold expired" : "Verify and pay"}</h2>
               <p className="muted">Your seat is temporarily reserved. Complete verification and payment before the hold expires.</p>
 
-              <div className="flow-card">
+              {expired && (
+                <div className="flow-card">
+                  <div className="flow-number">!</div>
+                  <div className="flow-content">
+                    <h3>Reservation released</h3>
+                    <p>No OTP or payment was processed. Choose another seat to continue.</p>
+                    <button className="primary" onClick={reset}>Choose another seat</button>
+                  </div>
+                </div>
+              )}
+
+              <div className="flow-card" hidden={expired}>
                 <div className="flow-number">1</div>
                 <div className="flow-content">
                   <h3>Verify your phone</h3>
@@ -426,7 +438,7 @@ function App() {
                 </div>
               </div>
 
-              <div className="flow-card">
+              <div className="flow-card" hidden={expired}>
                 <div className="flow-number">2</div>
                 <div className="flow-content">
                   <h3>Start payment</h3>
