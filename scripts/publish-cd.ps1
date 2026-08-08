@@ -27,6 +27,7 @@ $paths = @(
   'api/tests/unit/config.test.ts',
   'api/tests/unit/redis.test.ts',
   'docker-compose.yml',
+  'frontend/nginx.conf',
   'package-lock.json',
   'scripts/publish-cd.ps1',
   'scripts/verify-deployed.ps1',

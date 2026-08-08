@@ -101,6 +101,15 @@ jobs:
           cd /opt/cinemaseat
           sudo docker compose pull
           sudo env HOLD_TTL_SECONDS="$DEPLOY_HOLD_TTL_SECONDS" docker compose up -d --build --remove-orphans
+          frontend_ready=0
+          for attempt in $(seq 1 60); do
+            if sudo docker compose exec -T frontend wget -qO- http://127.0.0.1/health >/dev/null; then
+              frontend_ready=1
+              break
+            fi
+            sleep 2
+          done
+          test "$frontend_ready" -eq 1 || { sudo docker compose logs --tail 150 api frontend; exit 1; }
           sudo docker compose ps
           REMOTE
 
