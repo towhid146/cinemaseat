@@ -1,0 +1,116 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    name: API lint, typecheck, test, and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: cinemaseat
+          POSTGRES_PASSWORD: cinemaseat
+          POSTGRES_DB: cinemaseat_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cinemaseat -d cinemaseat_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://cinemaseat:cinemaseat@127.0.0.1:5432/cinemaseat_test
+      HOLD_TTL_SECONDS: 5
+      GATEWAY_URL: http://127.0.0.1:9000
+      GATEWAY_CALLBACK_URL: http://127.0.0.1:3000/webhooks/payment
+      GATEWAY_SECRET: z2p-2026-secret
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install workspace dependencies
+        run: npm ci
+
+      - name: Apply test database migrations
+        run: npm run migrate --workspace api
+
+      - name: Lint API
+        run: npm run lint --workspace api --if-present
+
+      - name: Typecheck API
+        run: npm run typecheck --workspace api
+
+      - name: Test API
+        run: npm test --workspace api
+
+      - name: Build API
+        run: npm run build --workspace api
+
+  frontend:
+    name: Frontend lint, typecheck, test, and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install workspace dependencies
+        run: npm ci
+
+      - name: Lint frontend
+        run: npm run lint --workspace frontend --if-present
+
+      - name: Typecheck frontend
+        run: npm run typecheck --workspace frontend
+
+      - name: Test frontend
+        run: npm test --workspace frontend --if-present
+
+      - name: Build frontend
+        run: npm run build --workspace frontend
+
+  compose:
+    name: Validate container stack
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs:
+      - api
+      - frontend
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Validate Compose configuration
+        run: docker compose config --quiet
+
+      - name: Build local images
+        run: docker compose build api frontend

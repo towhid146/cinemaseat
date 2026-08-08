@@ -1,0 +1,65 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-cinemaseat}
+      POSTGRES_USER: ${POSTGRES_USER:-cinemaseat}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cinemaseat}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  gateway:
+    image: asifmahmoud414/mock-gateway:latest
+    ports: ["9000:9000"]
+    environment:
+      GATEWAY_SECRET: ${GATEWAY_SECRET:-z2p-2026-secret}
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgres://${POSTGRES_USER:-cinemaseat}:${POSTGRES_PASSWORD:-cinemaseat}@postgres:5432/${POSTGRES_DB:-cinemaseat}
+      HOLD_TTL_SECONDS: ${HOLD_TTL_SECONDS:-120}
+      HOLD_SWEEP_INTERVAL_MS: ${HOLD_SWEEP_INTERVAL_MS:-1000}
+      GATEWAY_URL: http://gateway:9000
+      GATEWAY_CALLBACK_URL: http://api:3000/webhooks/payment
+      GATEWAY_SECRET: ${GATEWAY_SECRET:-z2p-2026-secret}
+      GATEWAY_TIMEOUT_MS: ${GATEWAY_TIMEOUT_MS:-5000}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/health"]
+      interval: 5s
+      timeout: 2s
+      retries: 12
+      start_period: 5s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+volumes:
+  postgres_data:

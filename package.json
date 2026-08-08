@@ -1,0 +1,15 @@
+{
+  "name": "cinemaseat",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": ["api", "frontend"],
+  "scripts": {
+    "build": "npm run build --workspace api && npm run build --workspace frontend",
+    "test": "npm run test --workspace api",
+    "typecheck": "npm run typecheck --workspace api && npm run typecheck --workspace frontend",
+    "dev:api": "npm run dev --workspace api",
+    "dev:frontend": "npm run dev --workspace frontend"
+  },
+  "engines": { "node": ">=20" }
+}
+
