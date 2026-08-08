@@ -11,10 +11,24 @@ const TERMINAL_BOOKING_STATUSES = new Set([
 ]);
 
 function makeUserId(): string {
-  const saved = localStorage.getItem("cinemaseat-user-id");
-  if (saved) return saved;
-  const created = `guest-${crypto.randomUUID().slice(0, 12)}`;
-  localStorage.setItem("cinemaseat-user-id", created);
+  try {
+    const saved = localStorage.getItem("cinemaseat-user-id");
+    if (saved) return saved;
+  } catch {
+    // Storage can be unavailable in privacy-restricted browser contexts.
+  }
+
+  // crypto.randomUUID() is restricted to secure contexts. The deployed HTTP
+  // demo still needs a non-security-sensitive guest correlation identifier.
+  const randomId = globalThis.crypto?.randomUUID?.() ??
+    `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  const created = `guest-${randomId.replaceAll("-", "").slice(0, 12)}`;
+
+  try {
+    localStorage.setItem("cinemaseat-user-id", created);
+  } catch {
+    // The in-memory value remains usable for this page session.
+  }
   return created;
 }
 
