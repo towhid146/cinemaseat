@@ -41,3 +41,33 @@ try {
   docker compose up -d gateway
   if ($LASTEXITCODE -ne 0) { throw 'Could not restart the gateway container.' }
 }
+
+Write-Host 'Stopping only the optional Redis accelerator...'
+docker compose stop redis
+if ($LASTEXITCODE -ne 0) { throw 'Could not stop the Redis container.' }
+
+try {
+  $timer = [System.Diagnostics.Stopwatch]::StartNew()
+  $health = Invoke-Json 'http://127.0.0.1:3000/health'
+  $timer.Stop()
+  if ($health.status -ne 'ok' -or $timer.ElapsedMilliseconds -ge 1000) {
+    throw "API health failed with Redis down ($($timer.ElapsedMilliseconds) ms)."
+  }
+
+  $movies = Invoke-Json 'http://127.0.0.1:3000/api/movies'
+  $showtimes = Invoke-Json 'http://127.0.0.1:3000/api/showtimes'
+  $showtimeId = [int] $showtimes.showtimes[0].id
+  $seatMap = Invoke-Json "http://127.0.0.1:3000/api/showtimes/$showtimeId/seats"
+  $seat = $seatMap.seats | Where-Object status -eq 'AVAILABLE' | Select-Object -First 1
+  if ($movies.movies.Count -lt 1 -or $null -eq $seat) { throw 'PostgreSQL fallback reads failed with Redis down.' }
+
+  $holdBody = @{ seatLabel = $seat.seatLabel; userId = "redis-down-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())" } | ConvertTo-Json
+  $hold = Invoke-Json "http://127.0.0.1:3000/api/showtimes/$showtimeId/holds" 'POST' $holdBody
+  if ($hold.status -ne 'HELD') { throw 'PostgreSQL fallback hold failed with Redis down.' }
+
+  Write-Host "PASS: Redis down; /health=$($timer.ElapsedMilliseconds) ms and PostgreSQL preserved reads/holds."
+} finally {
+  Write-Host 'Restarting the optional Redis accelerator...'
+  docker compose up -d redis
+  if ($LASTEXITCODE -ne 0) { throw 'Could not restart the Redis container.' }
+}

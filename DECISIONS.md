@@ -27,20 +27,21 @@ Catalog, booking, payment, and OTP cannot be deployed or scaled independently. A
 ### Options considered
 
 - Read a mutable `seats.status` value and then update it in application code.
-- Serialize buyers with an in-memory mutex or Redis lock.
+- Serialize buyers with an in-memory mutex or make Redis the authoritative lock.
+- Use Redis as a best-effort guard while PostgreSQL remains authoritative.
 - Represent every blocking claim in `bookings` and enforce one active booking per `(showtime_id, seat_label)` with a partial database uniqueness constraint.
 
 ### Decision
 
-Use the `bookings` table as the sole authority for whether a showtime seat is held or sold. A booking starts as `HELD`, carries an environment-controlled `expires_at`, and advances through `AWAITING_OTP` and `PAYMENT_PENDING` to `CONFIRMED`. A partial unique index on `(showtime_id, seat_label)` applies to those active statuses. A contender that loses the insert race receives a clean `409 Seat unavailable`. Expired or failed bookings leave the active status set transactionally, with cleanup used only for housekeeping.
+Use the `bookings` table as the sole authority for whether a showtime seat is held or sold. A booking starts as `HELD`, carries an environment-controlled `expires_at`, and advances through `AWAITING_OTP` and `PAYMENT_PENDING` to `CONFIRMED`. A partial unique index on `(showtime_id, seat_label)` applies to those active statuses. A contender that loses the insert race receives a clean `409 Seat unavailable`. Expired or failed bookings leave the active status set transactionally, with cleanup used only for housekeeping. Redis provides a short token-owned guard to reject obvious simultaneous contenders earlier, but failures fall through to PostgreSQL. Redis also caches immutable catalog data; live availability is not cached.
 
 ### Why
 
-The database constraint is shared by every API process and remains correct under genuine concurrent requests. It turns the core invariant—at most one active owner of a showtime seat—into something PostgreSQL enforces rather than something each application instance must remember. The seat map is derived from the seat catalog plus active bookings, so there is no second mutable status that can drift.
+The database constraint is shared by every API process and remains correct under genuine concurrent requests. It turns the core invariant—at most one active owner of a showtime seat—into something PostgreSQL enforces rather than something each application instance must remember. The seat map is derived from the seat catalog plus active bookings, so there is no second mutable status that can drift. Redis reduces avoidable hot-seat database work, but an outage, restart, or evicted lock only removes that optimization; it never removes the database invariant.
 
 ### What we gave up
 
-Hot seats create contention at the database constraint, and availability reads require joining or querying active booking state. This design is deliberately PostgreSQL-centric and would need a different consistency mechanism if writes were later distributed across databases or regions.
+Hot seats can still reach the database when Redis is unavailable, and availability reads require joining or querying active booking state. The extra Redis service adds operational complexity without becoming a source of truth. This design is deliberately PostgreSQL-centric and would need a different consistency mechanism if writes were later distributed across databases or regions.
 
 ## 3. Payment and OTP are independent gates
 

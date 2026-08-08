@@ -23,6 +23,16 @@ services:
       GATEWAY_SECRET: ${GATEWAY_SECRET:-z2p-2026-secret}
     restart: unless-stopped
 
+  redis:
+    image: redis:7.2-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "64mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+    restart: unless-stopped
+
   api:
     build:
       context: .
@@ -33,6 +43,9 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-cinemaseat}:${POSTGRES_PASSWORD:-cinemaseat}@postgres:5432/${POSTGRES_DB:-cinemaseat}
       HOLD_TTL_SECONDS: ${HOLD_TTL_SECONDS:-120}
       HOLD_SWEEP_INTERVAL_MS: ${HOLD_SWEEP_INTERVAL_MS:-1000}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      REDIS_CACHE_TTL_SECONDS: ${REDIS_CACHE_TTL_SECONDS:-30}
+      REDIS_LOCK_TTL_MS: ${REDIS_LOCK_TTL_MS:-3000}
       GATEWAY_URL: http://gateway:9000
       GATEWAY_CALLBACK_URL: http://api:3000/webhooks/payment
       GATEWAY_OTP_CALLBACK_URL: http://api:3000/webhooks/otp

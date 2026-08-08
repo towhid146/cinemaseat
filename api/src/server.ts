@@ -3,6 +3,7 @@ import { pool } from './db/pool.js';
 import { logger } from './logger.js';
 import { createApp } from './app.js';
 import { processRequiredRefunds, sweepExpiredBookings } from './services/bookings.js';
+import { closeRedis } from './services/redis.js';
 
 const config = loadConfig();
 const app = createApp();
@@ -29,6 +30,7 @@ async function shutdown(signal: string) {
   logger.info({ signal }, 'Shutting down');
   clearInterval(sweeper);
   server.close(async () => {
+    closeRedis();
     await pool.end();
     process.exit(0);
   });
@@ -37,4 +39,3 @@ async function shutdown(signal: string) {
 
 process.on('SIGTERM', () => void shutdown('SIGTERM'));
 process.on('SIGINT', () => void shutdown('SIGINT'));
-

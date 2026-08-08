@@ -10,9 +10,10 @@ The repository contains the intended end-to-end stack:
 
 - Node.js + TypeScript + Express modular-monolith API
 - PostgreSQL schema, migrations, and seed catalog
+- Optional Redis catalog cache and best-effort same-seat contention guard
 - React + Vite booking UI
 - Integration with `asifmahmoud414/mock-gateway:latest`; no replacement gateway is included
-- Docker Compose services for the API, frontend, PostgreSQL, and the provided gateway
+- Docker Compose services for the API, frontend, PostgreSQL, Redis, and the provided gateway
 - Automated unit/integration/concurrency tests and k6 scenarios
 - GitHub Actions CI/CD workflows and AWS provisioning/recovery scripts
 
@@ -41,19 +42,21 @@ The hackathon scope intentionally excludes an admin portal, seat selection acros
                         | booking lifecycle    |
                         | payments/webhooks    |
                         | OTP                  |
-                        +----------+-----------+
-                                   |
-                                   | transactions + unique constraints
-                                   v
-                        +----------------------+
-                        | PostgreSQL           |
-                        | catalog              |
-                        | bookings/payments    |
-                        | payments/OTP/events  |
-                        +----------------------+
+                        +-----+-----------+----+
+                              |           |
+                    cache +   |           | transactions + unique constraints
+                    guard     v           v
+                        +-----------+  +----------------------+
+                        | Redis     |  | PostgreSQL           |
+                        | optional  |  | authoritative state  |
+                        +-----------+  | catalog/bookings     |
+                                       | payments/OTP/events  |
+                                       +----------------------+
 ```
 
 Catalog seats are immutable facts. Availability is derived from the authoritative booking row: no active booking means `AVAILABLE`, an unexpired active hold means `HELD`, and a completed booking means `CONFIRMED`. The partial unique index covers `HELD`, `AWAITING_OTP`, `PAYMENT_PENDING`, and `CONFIRMED`. The hold TTL comes from `HOLD_TTL_SECONDS`.
+
+Redis caches only immutable catalog responses and provides a short, token-owned `SET NX PX` guard before the database insert. Live seat maps are never cached. Redis is deliberately fail-open: if it is unavailable, the request continues to PostgreSQL, whose partial unique index remains the sole correctness boundary. A Redis outage can reduce performance but cannot permit a double-booking.
 
 Payment is asynchronous. The API starts a charge with a stable idempotency key and returns while the booking is `PAYMENT_PENDING`. The gateway callback is matched by `booking_ref` so a forced early callback is safe, its HMAC is checked over the raw body, and its `event_id` is inserted in the same transaction as the state change. Duplicate and unknown events receive a 2xx response. Payment and OTP outcomes are persisted independently; both gates must succeed before confirmation.
 
@@ -79,7 +82,7 @@ Check health without involving the gateway:
 curl --fail http://localhost:3000/health
 ```
 
-The API health route is intentionally independent of gateway health, so browsing, seat holds, and `/health` continue to work if the gateway is unavailable. Stop the stack with `docker compose down`. To discard all local database state and reseed on the next start, use `docker compose down -v`.
+The API health route is intentionally independent of gateway and Redis health. Browsing, seat holds, and `/health` continue to work if either optional dependency is unavailable; PostgreSQL still enforces seat ownership. Stop the stack with `docker compose down`. To discard all local database state and reseed on the next start, use `docker compose down -v`.
 
 ### Configuration
 
@@ -90,6 +93,9 @@ Compose provides working local defaults. Important overrides include:
 | `DATABASE_URL` | PostgreSQL connection string | Compose service URL |
 | `PORT` | API listen port | `3000` |
 | `HOLD_TTL_SECONDS` | Seconds before an incomplete hold can be acquired again | Compose value |
+| `REDIS_URL` | Optional Redis address; unset to use PostgreSQL directly | `redis://redis:6379` |
+| `REDIS_CACHE_TTL_SECONDS` | Immutable catalog cache lifetime | `30` |
+| `REDIS_LOCK_TTL_MS` | Best-effort seat contention guard lifetime | `3000` |
 | `GATEWAY_URL` | Server-to-server gateway address | `http://gateway:9000` |
 | `GATEWAY_CALLBACK_URL` | Callback reachable from the gateway container | `http://api:3000/webhooks/payment` |
 | `GATEWAY_OTP_CALLBACK_URL` | OTP delivery callback reachable from the gateway container | `http://api:3000/webhooks/otp` |
@@ -241,7 +247,7 @@ npm test
 npm run build
 ```
 
-The local unit suite contains 8 passing tests. PostgreSQL-backed tests add 3 passing assertions for exact 100-request contention, expiry/rebooking, callback-race, and duplicate-event handling whenever `DATABASE_URL` is set; CI provisions that database automatically. Run every forced behavior against the real Compose gateway with:
+The local unit suite contains 12 passing tests, including Redis cache, token-lock, and disabled/fallback behavior. PostgreSQL-backed tests add 3 passing assertions for exact 100-request contention, expiry/rebooking, callback-race, and duplicate-event handling whenever `DATABASE_URL` is set; CI provisions PostgreSQL and Redis automatically. Run every forced behavior against the real Compose gateway with:
 
 ```bash
 node scripts/verify-gateway-modes.mjs
@@ -293,8 +299,8 @@ The production stack runs on an AWS EC2 `t2.micro` in `ap-southeast-1` behind an
 
 Provisioning is reproducible with `scripts/deploy-aws.ps1`. `scripts/verify-deployed.ps1` runs k6 from the operator's machine and writes the deployed Scenario A/B JSON evidence under the ignored `outputs/` directory.
 
-CI runs on pull requests and default-branch pushes. CD is scoped to default-branch pushes and activates when the production SSH variables/secrets documented in `.github/workflows/cd.yml` are configured. The initial AWS infrastructure deployment was performed with the checked-in provisioning script; credentials are prompted securely and never written to the repository.
+CI runs on pull requests and default-branch pushes. CD runs only on default-branch pushes when `ENABLE_SSH_DEPLOY=true`. It generates a temporary key, permits only the current GitHub runner IP, authenticates through EC2 Instance Connect, deploys, verifies the public health URL, and always revokes SSH ingress. Configure the two repository secrets `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`, plus the repository variables `AWS_REGION`, `EC2_INSTANCE_ID`, `EC2_SECURITY_GROUP_ID`, and `DEPLOY_HEALTHCHECK_URL`. The temporary lab credentials are never committed to the repository.
 
 ## Attribution
 
-The payment/OTP dependency is the hackathon-provided image `asifmahmoud414/mock-gateway:latest`. The application uses standard open-source Node.js, React, PostgreSQL, Docker, and k6 tooling declared in the repository; no custom replacement gateway is included.
+The payment/OTP dependency is the hackathon-provided image `asifmahmoud414/mock-gateway:latest`. The application uses standard open-source Node.js, React, PostgreSQL, Redis, Docker, and k6 tooling declared in the repository; no custom replacement gateway is included.

@@ -5,6 +5,7 @@ import { pool } from '../db/pool.js';
 import { AppError } from '../errors.js';
 import * as gateway from './gateway.js';
 import type { MockHeaders } from '../types.js';
+import { acquireSeatLock } from './redis.js';
 
 function bookingRef(): string {
   return `bk_${randomUUID().replaceAll('-', '').slice(0, 20)}`;
@@ -85,6 +86,19 @@ export async function processRequiredRefunds(): Promise<number> {
 }
 
 export async function createHold(showtimeId: number, seatLabel: string, userId: string) {
+  const lease = await acquireSeatLock(showtimeId, seatLabel);
+  if (lease.state === 'contended') {
+    throw new AppError(409, 'SEAT_UNAVAILABLE', 'Seat unavailable');
+  }
+
+  try {
+    return await createHoldInPostgres(showtimeId, seatLabel, userId);
+  } finally {
+    if (lease.state === 'acquired') await lease.release();
+  }
+}
+
+async function createHoldInPostgres(showtimeId: number, seatLabel: string, userId: string) {
   const client = await pool.connect();
   const id = randomUUID();
   const ref = bookingRef();

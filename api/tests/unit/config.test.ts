@@ -14,4 +14,11 @@ describe('configuration', () => {
     expect(loadConfig({}).GATEWAY_CALLBACK_URL).toBe('http://api:3000/webhooks/payment');
     expect(loadConfig({}).GATEWAY_OTP_CALLBACK_URL).toBe('http://api:3000/webhooks/otp');
   });
+
+  it('keeps Redis optional with bounded cache and lock defaults', () => {
+    const config = loadConfig({});
+    expect(config.REDIS_URL).toBeUndefined();
+    expect(config.REDIS_CACHE_TTL_SECONDS).toBe(30);
+    expect(config.REDIS_LOCK_TTL_MS).toBe(3000);
+  });
 });

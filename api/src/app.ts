@@ -10,6 +10,8 @@ import { logger } from './logger.js';
 import { otpWebhook, paymentWebhook } from './routes/webhook.js';
 import * as bookings from './services/bookings.js';
 import * as catalog from './services/catalog.js';
+import { cachedJson } from './services/redis.js';
+import { loadConfig } from './config.js';
 
 const holdBody = z.object({
   seatLabel: z.string().trim().min(1).max(10).transform((value) => value.toUpperCase()),
@@ -51,9 +53,15 @@ export function createApp() {
     res.status(200).json({ status: 'ready' });
   });
 
-  app.get('/api/movies', async (_req, res) => res.json({ movies: await catalog.listMovies() }));
-  app.get('/api/theatres', async (_req, res) => res.json({ theatres: await catalog.listTheatres() }));
-  app.get('/api/showtimes', async (_req, res) => res.json({ showtimes: await catalog.listShowtimes() }));
+  app.get('/api/movies', async (_req, res) => res.json({
+    movies: await cachedJson('cinemaseat:catalog:movies:v1', loadConfig().REDIS_CACHE_TTL_SECONDS, catalog.listMovies)
+  }));
+  app.get('/api/theatres', async (_req, res) => res.json({
+    theatres: await cachedJson('cinemaseat:catalog:theatres:v1', loadConfig().REDIS_CACHE_TTL_SECONDS, catalog.listTheatres)
+  }));
+  app.get('/api/showtimes', async (_req, res) => res.json({
+    showtimes: await cachedJson('cinemaseat:catalog:showtimes:v1', loadConfig().REDIS_CACHE_TTL_SECONDS, catalog.listShowtimes)
+  }));
 
   app.get('/api/showtimes/:showtimeId/seats', async (req, res) => {
     res.json(await bookings.getSeatMap(positiveInt(req.params.showtimeId)));

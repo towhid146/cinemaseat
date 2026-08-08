@@ -11,7 +11,7 @@ docker compose up -d --build
 .\scripts\verify-local.ps1
 ```
 
-The script runs the frontend smoke check, Scenario A, Scenario B with a temporary five-second hold TTL, all five payment force modes, the deterministic real-gateway OTP flow, and the gateway-down isolation check. It restores the normal API and gateway containers before exiting.
+The script runs the frontend smoke check, Scenario A, Scenario B with a temporary five-second hold TTL, all five payment force modes, the deterministic real-gateway OTP flow, and gateway/Redis-down isolation checks. It restores the normal containers before exiting.
 
 ## Required judge hooks
 
@@ -45,6 +45,7 @@ The test suite covers:
 - Payment and OTP webhook endpoints returning 2xx for invalid or unrecognized deliveries.
 - `HOLD_TTL_SECONDS` being read from the environment.
 - OTP requests using the distinct container-reachable callback URL and forwarding deterministic mode.
+- Redis cache miss/hit behavior, token-owned expiring guards, and PostgreSQL fallback when Redis is disabled.
 
 ## Gateway integration tests
 
@@ -113,6 +114,24 @@ Report the first load stage where p95 latency turns upward, the first stage with
 ## Delivery checks
 
 - CI runs on pull requests and pushes to `main`, provisions PostgreSQL, and gates typecheck, tests, builds, and Compose validation.
-- CD runs only on pushes to `main` when deployment secrets are configured.
+- CD runs only on pushes to `main` when `ENABLE_SSH_DEPLOY=true`; it uses a 60-second EC2 Instance Connect key, a temporary runner `/32` SSH rule, public health verification, and unconditional ingress cleanup.
 - Run `scripts/verify-deployed.ps1` from the operator machine to repeat required Scenarios A and B against the public URL and save JSON evidence under `outputs/`.
 - Confirm the frontend, `/health`, exact hold request, and exact seat-map request from the deployed URL before code freeze.
+
+## Compliance audit
+
+| Area | Status | Evidence or remaining work |
+|---|---|---|
+| Health, clean Compose startup, configurable hold TTL | Verified | Local acceptance and Scenario B |
+| Scenario A: 100 buyers, one seat | Verified | 1 success, 99 conflicts, 0 oversell locally and deployed |
+| Scenario B: abandoned hold | Verified | Seat expired and a different user rebooked locally and deployed |
+| Gateway success/fail/duplicate/timeout/race | Verified locally | Real provided container; no replacement mock |
+| Duplicate callback and early race | Verified | Database integration tests and gateway-mode run |
+| Raw-body signature and 2xx duplicate/unknown handling | Verified | API/unit and integration coverage |
+| Redis cache/guard with PostgreSQL fallback | Verified in code/unit tests | CI exercises Redis; PostgreSQL remains authoritative |
+| CI on PR and `main`; CD only on `main` | Implemented | Repository variables/secrets and `ENABLE_SSH_DEPLOY=true` are required |
+| Public AWS deployment | Verified for the currently deployed revision | Re-run deployed verification after publishing this Redis revision |
+| Scenario C breakpoint analysis | Not measured | Bonus script exists; requires an external k6 run and hardware-specific report |
+| Automatic payment recovery after a gateway outage | Partial | Health/catalog/holds survive; the client safely retries payment with the same idempotency key |
+| Metrics, tracing, authentication | Not implemented | Optional bonus scope; request IDs, structured logs, validation, HMAC, Nginx, and AWS are present |
+| Public repository and branch protection | Repository is public; protection not independently verified | Confirm the GitHub `main` ruleset requires the CI check |
