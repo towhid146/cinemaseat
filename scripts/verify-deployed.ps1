@@ -36,7 +36,25 @@ function Invoke-K6([string]$Script, [int]$ShowtimeId, [string]$SeatLabel, [strin
   if ($LASTEXITCODE -ne 0) { throw "k6 $Script failed with exit code $LASTEXITCODE." }
 }
 
-$health = Invoke-WebRequest -Uri "$baseUrl/health" -UseBasicParsing -TimeoutSec 15
+function Wait-ForPublicHealth {
+  Write-Host 'Waiting for the CD deployment and load-balancer target to become healthy...'
+  for ($attempt = 1; $attempt -le 120; $attempt += 1) {
+    try {
+      $response = Invoke-WebRequest -Uri "$baseUrl/health" -UseBasicParsing -TimeoutSec 10
+      if ($response.StatusCode -eq 200) { return $response }
+    } catch {
+      if ($attempt % 12 -eq 0) {
+        Write-Host "Still waiting for public health ($($attempt * 5) seconds)..."
+      }
+      if ($attempt -eq 120) {
+        throw "Public deployment did not become healthy within 10 minutes. Check GitHub Actions before retrying. Last error: $($_.Exception.Message)"
+      }
+    }
+    Start-Sleep -Seconds 5
+  }
+}
+
+$health = Wait-ForPublicHealth
 if ($health.StatusCode -ne 200) { throw "Public health returned HTTP $($health.StatusCode)." }
 Write-Host "Public health: HTTP 200 at $baseUrl" -ForegroundColor Green
 

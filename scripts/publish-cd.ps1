@@ -29,6 +29,7 @@ $paths = @(
   'docker-compose.yml',
   'package-lock.json',
   'scripts/publish-cd.ps1',
+  'scripts/verify-deployed.ps1',
   'scripts/verify-fault-isolation.ps1'
 )
 

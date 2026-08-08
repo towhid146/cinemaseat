@@ -11,6 +11,21 @@ function Invoke-Json([string] $uri, [string] $method = 'GET', [string] $body = '
   return Invoke-RestMethod @parameters
 }
 
+function Wait-ForApi {
+  for ($attempt = 1; $attempt -le 40; $attempt += 1) {
+    try {
+      $health = Invoke-RestMethod -Uri 'http://127.0.0.1:3000/health' -TimeoutSec 2
+      if ($health.status -eq 'ok') { return }
+    } catch {
+      if ($attempt -eq 40) { throw 'API did not become healthy within 20 seconds.' }
+    }
+    Start-Sleep -Milliseconds 500
+  }
+}
+
+Write-Host 'Waiting for the rebuilt API to become healthy...'
+Wait-ForApi
+
 Write-Host 'Stopping only the provided gateway container...'
 docker compose stop gateway
 if ($LASTEXITCODE -ne 0) { throw 'Could not stop the gateway container.' }
