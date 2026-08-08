@@ -23,6 +23,7 @@ jobs:
       EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
       EC2_SECURITY_GROUP_ID: ${{ vars.EC2_SECURITY_GROUP_ID }}
       DEPLOY_HEALTHCHECK_URL: ${{ vars.DEPLOY_HEALTHCHECK_URL || secrets.DEPLOY_HEALTHCHECK_URL }}
+      DEPLOY_HOLD_TTL_SECONDS: ${{ vars.DEPLOY_HOLD_TTL_SECONDS || '10' }}
     steps:
       - name: Validate deployment configuration
         env:
@@ -36,6 +37,7 @@ jobs:
           test -n "$EC2_INSTANCE_ID" || { echo 'Missing EC2_INSTANCE_ID variable'; exit 1; }
           test -n "$EC2_SECURITY_GROUP_ID" || { echo 'Missing EC2_SECURITY_GROUP_ID variable'; exit 1; }
           test -n "$DEPLOY_HEALTHCHECK_URL" || { echo 'Missing DEPLOY_HEALTHCHECK_URL variable'; exit 1; }
+          test "$DEPLOY_HOLD_TTL_SECONDS" -gt 0 || { echo 'DEPLOY_HOLD_TTL_SECONDS must be positive'; exit 1; }
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6.2.3
@@ -90,14 +92,15 @@ jobs:
             -o ConnectTimeout=20 \
             -o StrictHostKeyChecking=accept-new \
             -i "$key_path" \
-            "ec2-user@$PUBLIC_IP" <<'REMOTE'
+            "ec2-user@$PUBLIC_IP" \
+            "DEPLOY_HOLD_TTL_SECONDS='$DEPLOY_HOLD_TTL_SECONDS' bash -s" <<'REMOTE'
           set -euo pipefail
           sudo git -C /opt/cinemaseat fetch origin main
           sudo git -C /opt/cinemaseat checkout main
           sudo git -C /opt/cinemaseat pull --ff-only origin main
           cd /opt/cinemaseat
           sudo docker compose pull
-          sudo docker compose up -d --build --remove-orphans
+          sudo env HOLD_TTL_SECONDS="$DEPLOY_HOLD_TTL_SECONDS" docker compose up -d --build --remove-orphans
           sudo docker compose ps
           REMOTE
 

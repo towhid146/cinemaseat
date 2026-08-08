@@ -58,4 +58,15 @@ describe('optional Redis acceleration', () => {
     expect(await cachedJson('catalog', 30, loader, null)).toEqual(['database-result']);
     expect((await acquireSeatLock(1, 'A1', null)).state).toBe('unavailable');
   });
+
+  it('fails open when Redis commands throw during an outage', async () => {
+    const failingClient = fakeRedis({
+      get: vi.fn().mockRejectedValue(new Error('socket closed')),
+      set: vi.fn().mockRejectedValue(new Error('socket closed'))
+    });
+    const loader = vi.fn().mockResolvedValue(['postgres-result']);
+
+    expect(await cachedJson('catalog', 30, loader, failingClient)).toEqual(['postgres-result']);
+    expect((await acquireSeatLock(1, 'A1', failingClient)).state).toBe('unavailable');
+  });
 });

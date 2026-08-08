@@ -48,7 +48,11 @@ async function redisClient(): Promise<RedisCommands | null> {
     })
     .catch((error) => {
       logger.warn({ error }, 'Redis unavailable; using PostgreSQL fallback');
-      candidate.destroy();
+      try {
+        candidate.destroy();
+      } catch (destroyError) {
+        logger.debug({ error: destroyError }, 'Redis client was already closed');
+      }
       return null;
     })
     .finally(() => {
@@ -57,13 +61,23 @@ async function redisClient(): Promise<RedisCommands | null> {
   return connectionAttempt;
 }
 
+async function bestEffortClient(overrideClient?: RedisCommands | null): Promise<RedisCommands | null> {
+  if (overrideClient !== undefined) return overrideClient;
+  try {
+    return await redisClient();
+  } catch (error) {
+    logger.warn({ error }, 'Redis client acquisition failed; using PostgreSQL fallback');
+    return null;
+  }
+}
+
 export async function cachedJson<T>(
   key: string,
   ttlSeconds: number,
   loader: () => Promise<T>,
   overrideClient?: RedisCommands | null
 ): Promise<T> {
-  const client = overrideClient === undefined ? await redisClient() : overrideClient;
+  const client = await bestEffortClient(overrideClient);
   if (!client) return loader();
 
   try {
@@ -94,7 +108,7 @@ export async function acquireSeatLock(
   seatLabel: string,
   overrideClient?: RedisCommands | null
 ): Promise<SeatLockLease> {
-  const client = overrideClient === undefined ? await redisClient() : overrideClient;
+  const client = await bestEffortClient(overrideClient);
   if (!client) return { state: 'unavailable' };
 
   const key = `cinemaseat:lock:seat:${showtimeId}:${seatLabel}`;
@@ -129,7 +143,11 @@ export async function acquireSeatLock(
 }
 
 export function closeRedis(): void {
-  activeClient?.destroy();
+  try {
+    activeClient?.destroy();
+  } catch (error) {
+    logger.debug({ error }, 'Redis client was already closed during shutdown');
+  }
   activeClient = null;
   connectionAttempt = null;
 }

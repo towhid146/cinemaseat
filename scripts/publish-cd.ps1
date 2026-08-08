@@ -47,8 +47,8 @@ git push origin main
 if ($LASTEXITCODE -ne 0) { throw 'Could not push the release commit.' }
 
 if (git status --porcelain) {
+  Write-Warning 'The release was pushed successfully. Unrelated local files remain and were intentionally not published:'
   git status --short
-  throw 'The repository still contains uncommitted changes.'
 }
 
 Write-Host 'CD workflow published. GitHub Actions should now start CI and CD.' -ForegroundColor Green

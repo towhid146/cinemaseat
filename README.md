@@ -247,7 +247,7 @@ npm test
 npm run build
 ```
 
-The local unit suite contains 12 passing tests, including Redis cache, token-lock, and disabled/fallback behavior. PostgreSQL-backed tests add 3 passing assertions for exact 100-request contention, expiry/rebooking, callback-race, and duplicate-event handling whenever `DATABASE_URL` is set; CI provisions PostgreSQL and Redis automatically. Run every forced behavior against the real Compose gateway with:
+The local unit suite contains 13 passing tests, including Redis cache, token-lock, outage, and disabled/fallback behavior. PostgreSQL-backed tests add 3 passing assertions for exact 100-request contention, expiry/rebooking, callback-race, and duplicate-event handling whenever `DATABASE_URL` is set; CI provisions PostgreSQL and Redis automatically. Run every forced behavior against the real Compose gateway with:
 
 ```bash
 node scripts/verify-gateway-modes.mjs
@@ -299,7 +299,7 @@ The production stack runs on an AWS EC2 `t2.micro` in `ap-southeast-1` behind an
 
 Provisioning is reproducible with `scripts/deploy-aws.ps1`. `scripts/verify-deployed.ps1` runs k6 from the operator's machine and writes the deployed Scenario A/B JSON evidence under the ignored `outputs/` directory.
 
-CI runs on pull requests and default-branch pushes. CD runs only on default-branch pushes when `ENABLE_SSH_DEPLOY=true`. It generates a temporary key, permits only the current GitHub runner IP, authenticates through EC2 Instance Connect, deploys, verifies the public health URL, and always revokes SSH ingress. Configure the two repository secrets `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`, plus the repository variables `AWS_REGION`, `EC2_INSTANCE_ID`, `EC2_SECURITY_GROUP_ID`, and `DEPLOY_HEALTHCHECK_URL`. The temporary lab credentials are never committed to the repository.
+CI runs on pull requests and default-branch pushes. CD runs only on default-branch pushes when `ENABLE_SSH_DEPLOY=true`. It generates a temporary key, permits only the current GitHub runner IP, authenticates through EC2 Instance Connect, deploys, verifies the public health URL, and always revokes SSH ingress. Configure the two repository secrets `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`, plus the repository variables `AWS_REGION`, `EC2_INSTANCE_ID`, `EC2_SECURITY_GROUP_ID`, and `DEPLOY_HEALTHCHECK_URL`. The optional `DEPLOY_HOLD_TTL_SECONDS` variable defaults to `10` so deployed Scenario B completes quickly. The temporary lab credentials are never committed to the repository.
 
 ## Attribution
 
