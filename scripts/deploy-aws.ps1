@@ -1,6 +1,7 @@
 param(
   [string]$Region = 'ap-southeast-1',
-  [string]$InstanceType = 't3.small'
+  [string]$InstanceType = 't2.micro',
+  [string]$AmiId = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -33,6 +34,41 @@ function Invoke-Aws([string[]]$AwsArguments) {
   }
 
   return (($result | Out-String).Trim())
+}
+
+function Test-RunInstancesPermission(
+  [string]$ImageId,
+  [string]$SubnetId,
+  [string]$SecurityGroupId,
+  [string]$Name
+) {
+  $volume = ($PSScriptRoot -replace '\\', '/') + ':/workspace/scripts:ro'
+  $arguments = @(
+    'ec2', 'run-instances', '--dry-run',
+    '--image-id', $ImageId,
+    '--instance-type', $InstanceType,
+    '--subnet-id', $SubnetId,
+    '--security-group-ids', $SecurityGroupId,
+    '--associate-public-ip-address',
+    '--user-data', 'file:///workspace/scripts/aws-user-data.sh',
+    '--tag-specifications', "ResourceType=instance,Tags=[{Key=Name,Value=$Name}]"
+  )
+  $result = & docker run --rm `
+    --env-file $credentialsFile.FullName `
+    --volume $volume `
+    amazon/aws-cli:latest @arguments 2>&1
+  $exitCode = $LASTEXITCODE
+  $message = (($result | Out-String).Trim())
+
+  if ($message -match 'DryRunOperation') {
+    return
+  }
+
+  if ($message -match 'UnauthorizedOperation|explicit deny') {
+    throw "EC2 launch preflight was denied for instance type '$InstanceType'. This lab account restricts ec2:RunInstances; use an instance type allowed by its IAM policy (the console default is t2.micro). AWS response: $message"
+  }
+
+  throw "EC2 launch preflight failed (exit code $exitCode): $message"
 }
 
 function Save-DeploymentState {
@@ -96,12 +132,38 @@ try {
   }
   $created.subnetIds = @($selectedSubnets.id)
 
-  $amiId = Invoke-Aws @(
-    'ssm', 'get-parameter',
-    '--name', '/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64',
-    '--query', 'Parameter.Value', '--output', 'text'
+  if ($AmiId) {
+    $created.amiId = $AmiId
+  }
+  else {
+    Write-Host 'SSM parameter lookup unavailable in this account; querying EC2 describe-images instead...'
+    $created.amiId = Invoke-Aws @(
+      'ec2', 'describe-images',
+      '--owners', 'amazon',
+      '--filters', 'Name=name,Values=al2023-ami-*-x86_64', 'Name=state,Values=available',
+      '--query', 'sort_by(Images, &CreationDate)[-1].ImageId',
+      '--output', 'text'
+    )
+    if (-not $created.amiId -or $created.amiId -eq 'None') {
+      throw 'Could not resolve an Amazon Linux 2023 AMI ID. Pass one explicitly with -AmiId <ami-xxxxxxxx>.'
+    }
+  }
+
+  $defaultSecurityGroupId = Invoke-Aws @(
+    'ec2', 'describe-security-groups',
+    '--filters', "Name=vpc-id,Values=$vpcId", 'Name=group-name,Values=default',
+    '--query', 'SecurityGroups[0].GroupId', '--output', 'text'
   )
-  $created.amiId = $amiId
+  if (-not $defaultSecurityGroupId -or $defaultSecurityGroupId -eq 'None') {
+    throw "Could not resolve the default security group for VPC $vpcId."
+  }
+
+  Write-Host "Checking EC2 launch permission for $InstanceType..."
+  Test-RunInstancesPermission `
+    -ImageId $created.amiId `
+    -SubnetId $selectedSubnets[0].id `
+    -SecurityGroupId $defaultSecurityGroupId `
+    -Name "CinemaSeat-$suffix"
 
   Write-Host 'Creating security groups...'
   $instanceSecurityGroupId = Invoke-Aws @(
@@ -131,7 +193,7 @@ try {
 
   Write-Host 'Launching EC2 instance...'
   $instanceId = Invoke-Aws @(
-    'ec2', 'run-instances', '--image-id', $amiId, '--instance-type', $InstanceType,
+    'ec2', 'run-instances', '--image-id', $created.amiId, '--instance-type', $InstanceType,
     '--subnet-id', $selectedSubnets[0].id, '--security-group-ids', $instanceSecurityGroupId,
     '--associate-public-ip-address', '--user-data', 'file:///workspace/scripts/aws-user-data.sh',
     '--tag-specifications', "ResourceType=instance,Tags=[{Key=Name,Value=CinemaSeat-$suffix}]",
